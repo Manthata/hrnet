@@ -1,4 +1,4 @@
-## PoseTrack by hrnet   
+## PoseTrack by hrnet on Yolo v5 
 
 https://github.com/lxy5513/cvToolBox
 
@@ -71,3 +71,4 @@ python pose_estimation/SGfilter.py
 
 `original code`
 clone from https://github.com/leoxiaobin/deep-high-resolution-net.pytorch
+
