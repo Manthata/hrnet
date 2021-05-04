@@ -2,7 +2,8 @@ import cv2
 import torch
 import torchvision.transforms as transforms
 import _init_paths
-from utils.transforms import *
+# changed from utils to utilities cause of yolo
+from utillities.transforms import *
 import numpy as np
 import ipdb;pdb=ipdb.set_trace
 
@@ -142,7 +143,7 @@ def _xywh2cs(x, y, w, h, image_width, image_height):
     return center, scale #(宽、高)
 
 ###### Pre-process
-def PreProcess(image, bboxs, scores, cfg, thred_score=0.6):
+def PreProcess(image, bboxs, scores, cfg, thred_score=0.25):
 
     if type(image) == str:
         data_numpy = cv2.imread(image, cv2.IMREAD_COLOR | cv2.IMREAD_IGNORE_ORIENTATION)
@@ -153,10 +154,14 @@ def PreProcess(image, bboxs, scores, cfg, thred_score=0.6):
     inputs = []
     centers = []
     scales = []
-
-    score_num = np.sum(scores>thred_score)
-    max_box = min(100, score_num)
-    for bbox in bboxs[:max_box]:
+    # print("In the utils", scores)
+    # score_num = np.sum(scores > thred_score)
+    # print("what ever this is", score_num)
+    # max_box = min(100, score_num)
+    # print("THis is our bottle neck", max_box)
+    print("what ever this is", scores)
+    for bbox in bboxs:
+        print("In the utils for bboxs ", bbox)
         x1,y1,x2,y2 = bbox
         box = [x1, y1, x2-x1, y2-y1]
 
