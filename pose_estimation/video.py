@@ -1,10 +1,9 @@
-'''
-使用yolov3作为pose net模型的前处理
-'''
+# "I changed the object detector from yolov3 to yolov5"
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import sys
 import argparse
 import os
 import pprint
@@ -19,14 +18,19 @@ import _init_paths
 from config import cfg
 import config
 from config import update_config
-
-from utils.transforms import *
-from lib.core.inference import get_final_preds
+# sys.path.insert(0, '../lib/utils')
+# I changed utils to utilities because there was some conflicts with the delicate yolo v5
+from utillities.transforms import *
+from core.inference import get_final_preds
 import cv2
 #  import ataset
-import models
-from lib.detector.yolo.human_detector import human_bbox_get as yolo_det
-from lib.detector.mmdetection.high_api import human_boxes_get as mm_det
+import modelss
+import json
+# from .lib.detector.yolo.human_detector import human_bbox_get as yolo_det
+# from .lib.detector.mmdetection.high_api import human_boxes_get as mm_det
+
+#I also changed the cuda() to check if cpu is available so I can run the code of nvidia device and on my laptop 
+device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 
 def parse_args():
@@ -34,7 +38,7 @@ def parse_args():
     # general
     parser.add_argument('--cfg',
                         help='experiment configure file name',
-                        default='experiments/coco/hrnet/w32_256x192_adam_lr1e-3.yaml',
+                        default='../experiments/coco/hrnet/w32_256x192_adam_lr1e-3.yaml',
                         #  default='experiments/coco/hrnet/w48_256x192_adam_lr1e-3.yaml',
                         #  default='experiments/coco/hrnet/w32_384x288_adam_lr1e-3.yaml',
                         type=str)
@@ -56,14 +60,14 @@ def parse_args():
     parser.add_argument('--dataDir',
                         help='data directory',
                         type=str,
-                        default='')
+                        default='outputs')
     parser.add_argument('--prevModelDir',
                         help='prev Model directory',
                         type=str,
                         default='')
 
-    parser.add_argument("-i", "--video_input", help="input video file name", default="/home/xyliu/Videos/sports/dance.mp4")
-    parser.add_argument("-o", "--video_output", help="output video file name", default="output/output.mp4")
+    parser.add_argument("-i", "--video_input", help="input video file name", default="")
+    parser.add_argument("-o", "--video_output", help="output video file name", default="outputs/output.mp4")
 
     parser.add_argument('--camera', action='store_true')
     parser.add_argument('--display', action='store_true')
@@ -75,10 +79,10 @@ def parse_args():
 
 ##### load model
 def model_load(config):
-    model = eval('models.'+config.MODEL.NAME+'.get_pose_net')(
+    model = eval('modelss.'+config.MODEL.NAME+'.get_pose_net')(
         config, is_train=False
     )
-    model_file_name  = 'models/pytorch/pose_coco/pose_hrnet_w32_256x192.pth'
+    model_file_name  = '../weights/pose_hrnet_w32_256x192.pth'
     #  model_file_name  = 'models/pytorch/pose_coco/pose_hrnet_w48_256x192.pth'
     #  model_file_name  = 'models/pytorch/pose_coco/pose_hrnet_w32_384x288.pth'
     state_dict = torch.load(model_file_name)
@@ -102,14 +106,11 @@ def ckpt_time(t0=None, display=None):
         return t1-t0, t1
 
 
-###### 加载human detecotor model
-from lib.detector.yolo.human_detector import load_model as yolo_model
-#  human_model = yolo_model()
+yolov5_model = torch.hub.load('ultralytics/yolov5', 'yolov5s', pretrained=True)
 
-from lib.detector.mmdetection.high_api import load_model as mm_model
-human_model = mm_model()
 
 def main():
+    json_data = {}
     args = parse_args()
     update_config(cfg, args)
 
@@ -118,8 +119,8 @@ def main():
         cam = cv2.VideoCapture(args.video_input)
         video_length = int(cam.get(cv2.CAP_PROP_FRAME_COUNT))
     else:
-        cam = cv2.VideoCapture(0)
-        video_length = 30000
+        cam = cv2.VideoCapture(1)
+        video_length = 30
 
     ret_val, input_image = cam.read()
     # Video writer
@@ -131,9 +132,10 @@ def main():
     #### load pose-hrnet MODEL
     pose_model = model_load(cfg)
     #  pose_model = torch.nn.DataParallel(pose_model, device_ids=[0,1]).cuda()
-    pose_model.cuda()
+    pose_model.to(device)
 
     item = 0
+    index = 0
     for i in tqdm(range(video_length-1)):
 
         x0 = ckpt_time()
@@ -147,9 +149,28 @@ def main():
 
         item = 0
         try:
-            bboxs, scores = mm_det(human_model, input_image)
-            # bbox is coordinate location
+            detections = yolov5_model(input_image)
+            # print(detections)
+            scores = []
+            bboxs = []
+
+            if detections is not None:
+                for i, det in enumerate(detections.pred):
+                    
+                    complete_bbox = det.numpy().tolist()
+                    for bbox in complete_bbox:
+                        if bbox[4] > 0.25 and bbox[5] == 0:
+                            # print("detections", complete_bbox[:4])
+                            bboxs.append(bbox[:4])
+                            # print("Our scores", bbox[4])
+                            scores.append(bbox[4])
+                            #print("Our scores", complete_bbox[4])
+                            # bbox is coordinate location
+            # print("boxes", bboxs)
+            # print("scores", scores)
             inputs, origin_img, center, scale = PreProcess(input_image, bboxs, scores, cfg)
+
+                
         except:
             out.write(input_image)
             cv2.namedWindow("enhanced",0);
@@ -160,13 +181,20 @@ def main():
 
         with torch.no_grad():
             # compute output heatmap
+            print("We here babby ")
             inputs = inputs[:,[2,1,0]]
-            output = pose_model(inputs.cuda())
+            output = pose_model(inputs.to(device))
+            # print("Output from pose mode", output)
             # compute coordinate
             preds, maxvals = get_final_preds(
                 cfg, output.clone().cpu().numpy(), np.asarray(center), np.asarray(scale))
-
-        image = plot_keypoint(origin_img, preds, maxvals, 0.1)
+            json_data[index] = list()
+            json_data[index].append(preds.tolist()) 
+            
+            print("Key points", preds)
+            index += 1
+        
+        image = plot_keypoint(origin_img, preds, maxvals, 0.25)
         out.write(image)
         if args.display:
             ######### 全屏
@@ -180,6 +208,11 @@ def main():
             cv2.resizeWindow("enhanced", 960, 480);
             cv2.imshow('enhanced', image)
             cv2.waitKey(1)
+            with open('outputs/output.json', 'w') as json_file:
+                print(json_data)
+                json.dump(json_data, json_file)
+        
 
 if __name__ == '__main__':
     main()
+
