@@ -156,8 +156,8 @@ def main():
 
             if detections is not None:
                 for i, det in enumerate(detections.pred):
-                    
-                    complete_bbox = det.numpy().tolist()
+                    inputs = inputs[:,[2,1,0]]
+                    output = pose_model(inputs.to(device))
                     for bbox in complete_bbox:
                         if bbox[4] > 0.25 and bbox[5] == 0:
                             # print("detections", complete_bbox[:4])
